@@ -60,7 +60,7 @@ _snowflake_available = False
 _sf_env = {
     "account": os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1"),
     "user": os.environ.get("SNOWFLAKE_USERNAME", "MIKEPRINCE"),
-    "password": os.environ.get("SNOWFLAKE_PASSWORD", ""),
+    "password": os.environ.get("SNOWFLAKE_PASSWORD", "ChavezDog16!!!"),
     "database": os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE"),
     "schema": os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS"),
     "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "INGEST_WH"),
