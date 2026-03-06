@@ -1,0 +1,17 @@
+{
+  "locations": {
+    "Highland Village": {
+      "sales_start_date": null,
+      "opening_date": null
+    },
+    "Lakeview": {
+      "sales_start_date": null,
+      "opening_date": null
+    }
+  },
+  "attrition": {
+    "mode": "attrition_rate",
+    "attrition_rate": 5.0,
+    "avg_monthly_stay": 12
+  }
+}
