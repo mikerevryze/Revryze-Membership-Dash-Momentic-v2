@@ -66,6 +66,10 @@ _sf_env = {
     "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "INGEST_WH"),
 }
 
+print(f"[STARTUP] SNOWFLAKE_PASSWORD source: {'env var' if os.environ.get('SNOWFLAKE_PASSWORD') else 'fallback'}")
+print(f"[STARTUP] SNOWFLAKE_PASSWORD length: {len(_sf_env['password'])}")
+print(f"[STARTUP] Snowflake account: {_sf_env['account']}, user: {_sf_env['user']}")
+
 
 def _run_snowflake_probe():
     import subprocess, sys
@@ -82,26 +86,31 @@ def _run_snowflake_probe():
              f"warehouse='{_sf_env['warehouse']}', "
              "login_timeout=5, network_timeout=10).close(); "
              "print('OK')"],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=30
         )
+        print(f"[PROBE] stdout={result.stdout.strip()!r}, stderr={result.stderr.strip()[:200]!r}")
         return result.stdout.strip() == "OK"
-    except Exception:
+    except Exception as e:
+        print(f"[PROBE] Exception: {e}")
         return False
 
 
 def _probe_snowflake_loop():
     import time as _time
     global _snowflake_available
-    _time.sleep(30)
-    retry_intervals = [0, 60, 120, 300]
+    _time.sleep(5)
+    retry_intervals = [0, 30, 60, 120, 300]
     for i, wait in enumerate(retry_intervals):
         if _snowflake_available:
             return
         if wait > 0:
             _time.sleep(wait)
+        print(f"[PROBE] Attempt {i+1}/{len(retry_intervals)}")
         if _run_snowflake_probe():
             _snowflake_available = True
+            print("[PROBE] Snowflake connected successfully!")
             return
+    print("[PROBE] All attempts exhausted, Snowflake not available")
 
 
 threading.Thread(target=_probe_snowflake_loop, daemon=True).start()
