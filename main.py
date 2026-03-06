@@ -3,6 +3,7 @@ import json
 import random
 import threading
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import snowflake.connector
@@ -190,19 +191,19 @@ def get_summary(location: str, start_date: str = None, end_date: str = None):
             cur = conn.cursor()
             query = """
                 SELECT
-                    COALESCE(SUM(AD_SPEND), 0) AS total_ad_spend,
-                    COALESCE(SUM(META_LEADS), 0) AS total_meta_leads,
-                    COALESCE(SUM(MEMBERSHIPS_SOLD), 0) AS memberships_sold,
-                    COALESCE(SUM(MEMBERSHIP_REVENUE), 0) AS total_membership_revenue
+                    COALESCE(SUM(DAILY_SPEND), 0) AS total_ad_spend,
+                    COALESCE(SUM(DAILY_LEADS), 0) AS total_meta_leads,
+                    COALESCE(SUM(DAILY_MEMBERSHIPS_SOLD), 0) AS memberships_sold,
+                    COALESCE(SUM(DAILY_REVENUE), 0) AS total_membership_revenue
                 FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
                 WHERE LOCATION_NAME = %s
             """
             params = [location]
             if start_date:
-                query += " AND REPORT_DATE >= %s"
+                query += " AND DATE >= %s"
                 params.append(start_date)
             if end_date:
-                query += " AND REPORT_DATE <= %s"
+                query += " AND DATE <= %s"
                 params.append(end_date)
 
             cur.execute(query, params)
@@ -258,15 +259,27 @@ def get_daily(location: str, start_date: str = None, end_date: str = None):
     if conn:
         try:
             cur = conn.cursor()
-            query = "SELECT * FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY WHERE LOCATION_NAME = %s"
+            query = """
+                SELECT
+                    LOCATION_NAME,
+                    DATE AS REPORT_DATE,
+                    DAILY_SPEND AS AD_SPEND,
+                    DAILY_LEADS AS META_LEADS,
+                    DAILY_MEMBERSHIPS_SOLD AS MEMBERSHIPS_SOLD,
+                    DAILY_REVENUE AS MEMBERSHIP_REVENUE,
+                    CUMULATIVE_MEMBERSHIPS,
+                    CUMULATIVE_SPEND
+                FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                WHERE LOCATION_NAME = %s
+            """
             params = [location]
             if start_date:
-                query += " AND REPORT_DATE >= %s"
+                query += " AND DATE >= %s"
                 params.append(start_date)
             if end_date:
-                query += " AND REPORT_DATE <= %s"
+                query += " AND DATE <= %s"
                 params.append(end_date)
-            query += " ORDER BY REPORT_DATE ASC"
+            query += " ORDER BY DATE ASC"
             cur.execute(query, params)
 
             columns = [desc[0].lower() for desc in cur.description]
@@ -277,9 +290,11 @@ def get_daily(location: str, start_date: str = None, end_date: str = None):
                 for i, col in enumerate(columns):
                     val = row[i]
                     if isinstance(val, (date, datetime)):
-                        val = val.isoformat()
+                        val = val.isoformat()[:10]
                     elif isinstance(val, bytes):
                         val = val.decode("utf-8")
+                    elif isinstance(val, Decimal):
+                        val = float(val)
                     record[col] = val
                 result.append(record)
             return result

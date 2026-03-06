@@ -37,8 +37,9 @@ Full-stack web dashboard for Revryze (pre-launch membership sales company) that 
 - `SNOWFLAKE_WAREHOUSE` — Warehouse name (INGEST_WH)
 
 ## Snowflake Tables
-- `REVRYZE.ANALYTICS.LOCATION_MAP` — Location names
-- `REVRYZE.ANALYTICS.DASHBOARD_DAILY` — Daily metrics per location (AD_SPEND, META_LEADS, MEMBERSHIPS_SOLD, MEMBERSHIP_REVENUE, REPORT_DATE, LOCATION_NAME)
+- `REVRYZE.ANALYTICS.LOCATION_MAP` — Columns: LOCATION_NAME, AD_ACCOUNT_ID
+- `REVRYZE.ANALYTICS.DASHBOARD_DAILY` — Columns: LOCATION_NAME, DATE (timestamp), DAILY_SPEND (float), DAILY_LEADS (int), DAILY_MEMBERSHIPS_SOLD (int), DAILY_REVENUE (decimal), CUMULATIVE_MEMBERSHIPS (int), CUMULATIVE_SPEND (float)
+  - Queries alias these to: report_date, ad_spend, meta_leads, memberships_sold, membership_revenue (for frontend compatibility)
 
 ## Key Features
 - Location tabs that dynamically load from Snowflake's LOCATION_MAP
