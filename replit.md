@@ -43,13 +43,27 @@ Full-stack web dashboard for Revryze (pre-launch membership sales company) that 
 ## Key Features
 - Location tabs that dynamically load from Snowflake's LOCATION_MAP
 - Date range filtering (All Time, Last 7/30/60 days, Custom)
-- 6 KPI cards: Ad Spend, Meta Leads, CPL, Memberships Sold, Revenue, Cost/Membership
-- Two line charts: Daily Ad Spend + Cumulative Memberships with projection
+- 7 KPI cards: Ad Spend, Meta Leads, CPL, Memberships Sold, Revenue, Cost/Membership, Avg Membership Value
+- LTV callout with configurable attrition model (attrition rate or avg monthly stay)
+- Two line charts: Daily Ad Spend + Cumulative Memberships with projection trajectory
 - Sales Velocity section with projected membership count by opening day
-- Collapsible Settings panel with attrition model + LTV calculation
+- Collapsible Settings panel for location dates
 - Graceful fallback to sample data when Snowflake is unavailable
+
+## Snowflake Connection Strategy
+- Snowflake probe runs in a background subprocess with a 30-second delay to avoid CPU competition with initial page load
+- `_snowflake_available` defaults to False; API immediately serves fallback data
+- If Snowflake connects successfully after 30s, subsequent requests use real data
+- No GIL blocking: probe uses subprocess.run() in a daemon thread, not snowflake.connector in-process
 
 ## Running
 ```
 uvicorn main:app --host 0.0.0.0 --port 5000
 ```
+
+## CDN Dependencies
+- React 18 (production min) + ReactDOM
+- PropTypes (required by Recharts UMD)
+- Babel standalone (in-browser JSX transpilation)
+- Recharts 2.5.0 (NOT 2.12.x — that version has UMD export issues)
+- Tailwind CSS

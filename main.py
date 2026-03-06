@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -45,35 +46,83 @@ def save_config(cfg):
         json.dump(cfg, f, indent=2)
 
 
-_snowflake_available = None
+_snowflake_available = False
+
+_sf_env = {
+    "account": os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1"),
+    "user": os.environ.get("SNOWFLAKE_USERNAME", "MIKEPRINCE"),
+    "password": os.environ.get("SNOWFLAKE_PASSWORD", ""),
+    "database": os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE"),
+    "schema": os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS"),
+    "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "INGEST_WH"),
+}
+
+
+def _run_snowflake_probe():
+    import subprocess, sys
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import snowflake.connector; "
+             "snowflake.connector.connect("
+             f"account='{_sf_env['account']}', "
+             f"user='{_sf_env['user']}', "
+             f"password='{_sf_env['password']}', "
+             f"database='{_sf_env['database']}', "
+             f"schema='{_sf_env['schema']}', "
+             f"warehouse='{_sf_env['warehouse']}', "
+             "login_timeout=5, network_timeout=10).close(); "
+             "print('OK')"],
+            capture_output=True, text=True, timeout=15
+        )
+        return result.stdout.strip() == "OK"
+    except Exception:
+        return False
+
+
+def _probe_snowflake_loop():
+    import time as _time
+    global _snowflake_available
+    _time.sleep(30)
+    retry_intervals = [0, 60, 120, 300]
+    for i, wait in enumerate(retry_intervals):
+        if _snowflake_available:
+            return
+        if wait > 0:
+            _time.sleep(wait)
+        if _run_snowflake_probe():
+            _snowflake_available = True
+            return
+
+
+threading.Thread(target=_probe_snowflake_loop, daemon=True).start()
+
 
 def get_snowflake_conn():
-    global _snowflake_available
-    if _snowflake_available is False:
+    if not _snowflake_available:
         return None
     try:
         conn = snowflake.connector.connect(
-            account=os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1"),
-            user=os.environ.get("SNOWFLAKE_USERNAME", "MIKEPRINCE"),
-            password=os.environ.get("SNOWFLAKE_PASSWORD", ""),
-            database=os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE"),
-            schema=os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS"),
-            warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "INGEST_WH"),
-            login_timeout=5,
-            network_timeout=10,
+            login_timeout=5, network_timeout=10,
+            **_sf_env,
         )
-        _snowflake_available = True
         return conn
     except Exception:
-        _snowflake_available = False
         return None
+
+
+def _reset_probe():
+    global _snowflake_available
+    if _run_snowflake_probe():
+        _snowflake_available = True
 
 
 @app.get("/api/reset-snowflake")
 def reset_snowflake():
     global _snowflake_available
-    _snowflake_available = None
-    return {"status": "Snowflake connection cache cleared. Next request will retry."}
+    _snowflake_available = False
+    threading.Thread(target=_reset_probe, daemon=True).start()
+    return {"status": "Snowflake connection cache cleared. Retrying in background."}
 
 
 def generate_fallback_daily(location, start_date_str=None, end_date_str=None):
@@ -258,6 +307,16 @@ async def post_config(request: Request):
 
 
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+
+
+@app.middleware("http")
+async def add_no_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/")
