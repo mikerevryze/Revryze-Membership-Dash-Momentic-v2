@@ -7,8 +7,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.js"></script>
   <style>
     body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
@@ -176,15 +177,17 @@
         : (config?.attrition?.avg_monthly_stay || 0);
       const estimatedLTV = summary ? summary.total_membership_revenue * ltvMultiplier : 0;
 
-      const cumulativeDaily = daily.map((d, i) => {
-        const prev = i > 0 ? cumulativeDaily[i - 1].cumulative_memberships : 0;
-        return {
-          ...d,
-          report_date: d.report_date,
-          ad_spend: d.ad_spend,
-          cumulative_memberships: prev + (d.memberships_sold || 0),
-        };
-      });
+      const cumulativeDaily = [];
+      let cumSum = 0;
+      for (let i = 0; i < daily.length; i++) {
+        cumSum += (daily[i].memberships_sold || 0);
+        cumulativeDaily.push({
+          ...daily[i],
+          report_date: daily[i].report_date,
+          ad_spend: daily[i].ad_spend,
+          cumulative_memberships: cumSum,
+        });
+      }
 
       let projectionData = [];
       if (cumulativeDaily.length > 0 && openingDate && summary?.memberships_per_day > 0) {
@@ -279,6 +282,12 @@
           {error && (
             <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-6">
               {error}
+            </div>
+          )}
+
+          {summary && summary.data_source === "sample" && (
+            <div className="bg-amber-900/30 border border-amber-600/30 text-amber-300 px-4 py-2.5 rounded-lg mb-6 text-sm">
+              Showing sample data — Snowflake is not connected. Data will update automatically once Snowflake is available.
             </div>
           )}
 

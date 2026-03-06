@@ -1,12 +1,12 @@
 {
   "locations": {
     "Highland Village": {
-      "sales_start_date": null,
-      "opening_date": null
+      "sales_start_date": "2026-01-15",
+      "opening_date": "2026-06-01"
     },
     "Lakeview": {
-      "sales_start_date": null,
-      "opening_date": null
+      "sales_start_date": "2026-01-20",
+      "opening_date": "2026-07-01"
     }
   },
   "attrition": {
