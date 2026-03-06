@@ -1,0 +1,255 @@
+# Claude Code Task: Build Revryze Pre-Launch Membership Dashboard in Replit
+
+## Overview
+
+Build a full-stack web dashboard for Revryze (a pre-launch membership sales company) that visualizes GHL + Meta Ads data pulled from Snowflake. The dashboard is used internally by Revryze to track client performance across multiple locations.
+
+Stack:
+- **Backend**: Python + FastAPI, queries Snowflake directly
+- **Frontend**: React (single page, no router needed)
+- **Config persistence**: `config.json` file on the backend filesystem (stores opening dates, sales start dates, attrition settings per location)
+- **Styling**: Tailwind CSS via CDN
+
+---
+
+## File structure to create
+
+```
+/
+├── main.py                  # FastAPI backend
+├── config.json              # Persisted settings (auto-created if missing)
+├── requirements.txt
+└── frontend/
+    └── index.html           # Single-file React app (loaded via CDN)
+```
+
+---
+
+## Snowflake credentials
+
+```
+Account:   VSC78986.us-east-1
+Username:  MIKEPRINCE
+Password:  ChavezDog16!!!
+Database:  REVRYZE
+Schema:    ANALYTICS
+Warehouse: INGEST_WH
+```
+
+---
+
+## Backend: main.py
+
+Use FastAPI. Install `snowflake-connector-python` and `fastapi` and `uvicorn`.
+
+### Endpoints
+
+#### GET /api/locations
+Returns list of location names from `REVRYZE.ANALYTICS.LOCATION_MAP`.
+
+Response:
+```json
+["Highland Village", "Lakeview"]
+```
+
+#### GET /api/summary?location=Highland+Village&start_date=2025-01-01&end_date=2025-03-06
+Queries `REVRYZE.ANALYTICS.DASHBOARD_SUMMARY` filtered by location.
+Also accepts optional `start_date` and `end_date` for date range filtering against `REVRYZE.ANALYTICS.DASHBOARD_DAILY`.
+
+For the summary endpoint, compute these fields from `DASHBOARD_DAILY` within the date range:
+- `total_ad_spend`
+- `total_meta_leads`
+- `memberships_sold`
+- `total_membership_revenue`
+- `cpl` (total_ad_spend / total_meta_leads)
+- `cost_per_membership` (total_ad_spend / memberships_sold)
+- `days_selling` (from config sales_start_date to today)
+- `memberships_per_day` (memberships_sold / days_selling)
+
+Response example:
+```json
+{
+  "location": "Highland Village",
+  "total_ad_spend": 1173.66,
+  "total_meta_leads": 326,
+  "memberships_sold": 11,
+  "total_membership_revenue": 2299.00,
+  "cpl": 3.60,
+  "cost_per_membership": 106.70,
+  "days_selling": 42,
+  "memberships_per_day": 0.262
+}
+```
+
+#### GET /api/daily?location=Highland+Village&start_date=2025-01-01&end_date=2025-03-06
+Queries `REVRYZE.ANALYTICS.DASHBOARD_DAILY` filtered by location and date range.
+Returns array of daily rows sorted by date ascending.
+
+#### GET /api/config
+Returns the full config.json contents.
+
+Response:
+```json
+{
+  "locations": {
+    "Highland Village": {
+      "sales_start_date": "2025-01-15",
+      "opening_date": "2025-04-01"
+    },
+    "Lakeview": {
+      "sales_start_date": "2025-01-20",
+      "opening_date": "2025-05-01"
+    }
+  },
+  "attrition": {
+    "mode": "attrition_rate",
+    "attrition_rate": 5.0,
+    "avg_monthly_stay": 12
+  }
+}
+```
+
+#### POST /api/config
+Accepts a JSON body and overwrites config.json. Returns the saved config.
+
+#### Snowflake connection
+Use a connection pool or open/close per request. Handle errors gracefully — if Snowflake is unreachable, return a 500 with a clear message.
+
+---
+
+## Frontend: frontend/index.html
+
+Single HTML file. Use React via CDN, Tailwind via CDN, and Recharts via CDN for charts.
+
+### Layout
+
+- **Header**: Revryze logo (text-based, styled), page title "Pre-Launch Dashboard"
+- **Location tabs**: One tab per location (Highland Village, Lakeview). Clicking switches all data. Tabs should be prominent.
+- **Date range selector**: Dropdown with options: "All Time", "Last 7 Days", "Last 30 Days", "Last 60 Days", "Custom". When Custom is selected, show two date pickers (start/end).
+- **KPI cards row**: 6 cards in a row (or 3x2 on smaller screens):
+  1. Total Ad Spend ($)
+  2. Meta Leads
+  3. CPL ($)
+  4. Memberships Sold
+  5. Total Revenue ($)
+  6. Cost Per Membership ($)
+- **Charts section** (two charts side by side):
+  - Left: Line chart — Daily Ad Spend over time
+  - Right: Line chart — Cumulative Memberships Sold over time, with a projected trajectory line extending to the opening date
+- **Sales Velocity box**: Shows:
+  - Sales start date (editable inline)
+  - Current velocity (X memberships/day)
+  - Days until opening
+  - Projected memberships by opening date (velocity × days remaining, added to current count)
+  - A clear callout: "At current pace, you will have X members by opening day"
+- **Settings panel** (collapsible section at bottom or side drawer):
+  - Opening date input per location (date picker, saves on change)
+  - Sales start date input per location (date picker, saves on change)
+  - Attrition toggle: radio buttons for "Monthly Attrition Rate %" vs "Average Monthly Stay (months)"
+  - Input field for the selected mode
+  - **Lifetime Value display**: Shows `Total Revenue × (1 / attrition_rate × 100)` or `Total Revenue × avg_monthly_stay` depending on mode — label this "Estimated LTV Revryze Has Sold"
+
+### Design requirements
+- Dark background (#0f1117 or similar dark navy)
+- Accent color: use a clean blue or teal (#3b82f6 or similar)
+- KPI cards: dark card background with white numbers, large font
+- Charts: dark background, white/light grid lines
+- Professional, minimal — this is shown to clients
+- Tabs should clearly indicate which location is active
+
+### Data flow
+- On load: fetch `/api/locations`, `/api/config`, then fetch `/api/summary` and `/api/daily` for the first location
+- When location tab changes: refetch summary + daily for new location
+- When date range changes: refetch summary + daily with new dates
+- When config settings change: POST to `/api/config`, then recalculate velocity and LTV locally
+
+### Trajectory projection logic (frontend)
+```javascript
+// Given:
+const memberships_per_day = summary.memberships_per_day;
+const current_memberships = summary.memberships_sold;
+const opening_date = config.locations[location].opening_date;
+const today = new Date();
+const days_remaining = Math.max(0, (new Date(opening_date) - today) / (1000 * 60 * 60 * 24));
+const projected_total = current_memberships + (memberships_per_day * days_remaining);
+```
+
+### LTV logic (frontend)
+```javascript
+// Attrition rate mode: user enters e.g. 5 (meaning 5% monthly attrition)
+// avg monthly stay = 1 / (attrition_rate / 100)
+// LTV multiplier = avg_monthly_stay
+
+// Avg monthly stay mode: user enters e.g. 12 (months)
+// LTV multiplier = avg_monthly_stay directly
+
+const ltv_multiplier = config.attrition.mode === 'attrition_rate'
+  ? 1 / (config.attrition.attrition_rate / 100)
+  : config.attrition.avg_monthly_stay;
+
+const estimated_ltv = summary.total_membership_revenue * ltv_multiplier;
+// Label: "Estimated Lifetime Value Revryze Has Sold"
+```
+
+---
+
+## requirements.txt
+
+```
+fastapi
+uvicorn
+snowflake-connector-python
+python-dotenv
+```
+
+---
+
+## config.json (default, auto-create if missing)
+
+```json
+{
+  "locations": {
+    "Highland Village": {
+      "sales_start_date": null,
+      "opening_date": null
+    },
+    "Lakeview": {
+      "sales_start_date": null,
+      "opening_date": null
+    }
+  },
+  "attrition": {
+    "mode": "attrition_rate",
+    "attrition_rate": 5.0,
+    "avg_monthly_stay": 12
+  }
+}
+```
+
+---
+
+## Important notes
+
+- The dashboard will eventually support a 3rd location. When a new location is added in Snowflake's `LOCATION_MAP` view, it should automatically appear as a new tab in the dashboard with no code changes needed.
+- All config saves must persist across Replit restarts (write to filesystem, not memory).
+- Snowflake queries should use parameterized inputs to prevent injection.
+- The backend should serve the frontend's `index.html` at the root route `/`.
+- FastAPI should also serve the `frontend/` directory as static files.
+- Include CORS middleware so the frontend can call the backend freely.
+
+---
+
+## Replit-specific setup
+
+- The app should run with `uvicorn main:app --host 0.0.0.0 --port 8080`
+- Add a `.replit` file with:
+```
+run = "uvicorn main:app --host 0.0.0.0 --port 8080"
+```
+- Add a `replit.nix` or `pyproject.toml` if needed for Python package management
+
+---
+
+## Output
+
+Produce all files needed to run this app in Replit. The app should be fully functional on first run with no additional configuration needed beyond what is provided above.
