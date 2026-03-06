@@ -44,3 +44,4 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "cloudrun"
+run = ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 5000"]
