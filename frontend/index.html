@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Revryze — Pre-Launch Dashboard</title>
+  <link rel="icon" type="image/png" href="/frontend/favicon_transparent.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -14,14 +15,14 @@
     body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
     .kpi-card { background: #1a1d2e; border: 1px solid #2a2d3e; }
-    .tab-active { background: #3b82f6; color: #fff; }
+    .tab-active { background: #00d68f; color: #000; font-weight: 700; }
     .tab-inactive { background: #1a1d2e; color: #94a3b8; border: 1px solid #2a2d3e; }
     .chart-container { background: #1a1d2e; border: 1px solid #2a2d3e; }
     select, input[type="date"], input[type="number"] {
       background: #1a1d2e; color: #e2e8f0; border: 1px solid #2a2d3e;
       padding: 6px 10px; border-radius: 6px; outline: none;
     }
-    select:focus, input:focus { border-color: #3b82f6; }
+    select:focus, input:focus { border-color: #00d68f; }
   </style>
 </head>
 <body>
@@ -220,9 +221,10 @@
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">
-                <span className="text-blue-500">Revryze</span> Pre-Launch Dashboard
-              </h1>
+              <div className="flex items-center gap-3">
+                <img src="/frontend/logo.png" alt="Revryze" className="h-10" />
+                <h1 className="text-2xl font-bold text-white tracking-tight">Pre-Launch Dashboard</h1>
+              </div>
             </div>
           </div>
 
@@ -271,7 +273,7 @@
                 />
                 <button
                   onClick={() => fetchData(activeLocation)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold px-4 py-2 rounded-lg text-sm"
                 >
                   Apply
                 </button>
@@ -318,7 +320,7 @@
                           name="attrition_mode_ltv"
                           checked={config?.attrition?.mode === "attrition_rate"}
                           onChange={() => updateAttrition("mode", "attrition_rate")}
-                          className="accent-blue-500"
+                          className="accent-emerald-400"
                         />
                         Monthly Attrition Rate (%)
                       </label>
@@ -328,7 +330,7 @@
                           name="attrition_mode_ltv"
                           checked={config?.attrition?.mode === "avg_monthly_stay"}
                           onChange={() => updateAttrition("mode", "avg_monthly_stay")}
-                          className="accent-blue-500"
+                          className="accent-emerald-400"
                         />
                         Avg Monthly Stay (months)
                       </label>
@@ -435,8 +437,8 @@
                   </div>
                 </div>
                 {projectedTotal != null && (
-                  <div className="mt-5 bg-blue-600/20 border border-blue-500/30 rounded-lg px-5 py-3">
-                    <span className="text-blue-300 font-semibold">
+                  <div className="mt-5 bg-emerald-600/20 border border-emerald-500/30 rounded-lg px-5 py-3">
+                    <span className="text-emerald-300 font-semibold">
                       At current pace, you will have {projectedTotal} members by opening day
                       {openingDate ? ` (${openingDate})` : ""}.
                     </span>

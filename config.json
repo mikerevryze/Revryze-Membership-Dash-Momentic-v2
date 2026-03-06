@@ -2,16 +2,16 @@
   "locations": {
     "Highland Village": {
       "sales_start_date": "2026-02-25",
-      "opening_date": "2026-06-01"
+      "opening_date": "2026-06-30"
     },
     "Lakeview": {
       "sales_start_date": "2026-02-25",
-      "opening_date": "2026-07-01"
+      "opening_date": "2026-06-15"
     }
   },
   "attrition": {
-    "mode": "attrition_rate",
-    "attrition_rate": 5,
+    "mode": "avg_monthly_stay",
+    "attrition_rate": 8,
     "avg_monthly_stay": 12
   }
 }

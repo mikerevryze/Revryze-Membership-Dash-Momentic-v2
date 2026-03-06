@@ -334,6 +334,11 @@ async def add_no_cache(request: Request, call_next):
     return response
 
 
+@app.get("/favicon.ico")
+def serve_favicon():
+    return FileResponse("frontend/favicon_transparent.png", media_type="image/png")
+
+
 @app.get("/")
 def serve_index():
     return FileResponse("frontend/index.html")
