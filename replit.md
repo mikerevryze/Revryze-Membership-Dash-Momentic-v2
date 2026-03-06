@@ -22,8 +22,9 @@ Full-stack web dashboard for Revryze (pre-launch membership sales company) that 
 
 ## API Endpoints
 - `GET /api/locations` — List of location names from Snowflake or fallback
-- `GET /api/summary?location=X&start_date=Y&end_date=Z` — Aggregated KPIs
-- `GET /api/daily?location=X&start_date=Y&end_date=Z` — Daily time-series data
+- `GET /api/campaigns?location=X` — Distinct campaign names from META_ADS for a location
+- `GET /api/summary?location=X&start_date=Y&end_date=Z&campaigns=A,B` — Aggregated KPIs (campaigns filter uses META_ADS for spend/leads, DASHBOARD_DAILY for memberships/revenue)
+- `GET /api/daily?location=X&start_date=Y&end_date=Z&campaigns=A,B` — Daily time-series (campaigns filter joins META_ADS spend/leads with DASHBOARD_DAILY memberships/revenue)
 - `GET /api/config` — Current config.json
 - `POST /api/config` — Overwrite config.json
 - `GET /api/reset-snowflake` — Clear Snowflake connection cache to retry
@@ -40,6 +41,8 @@ Full-stack web dashboard for Revryze (pre-launch membership sales company) that 
 - `REVRYZE.ANALYTICS.LOCATION_MAP` — Columns: LOCATION_NAME, AD_ACCOUNT_ID
 - `REVRYZE.ANALYTICS.DASHBOARD_DAILY` — Columns: LOCATION_NAME, DATE (timestamp), DAILY_SPEND (float), DAILY_LEADS (int), DAILY_MEMBERSHIPS_SOLD (int), DAILY_REVENUE (decimal), CUMULATIVE_MEMBERSHIPS (int), CUMULATIVE_SPEND (float)
   - Queries alias these to: report_date, ad_spend, meta_leads, memberships_sold, membership_revenue (for frontend compatibility)
+- `REVRYZE.ANALYTICS.META_ADS` — Columns: LOCATION_NAME, DATE_START, CAMPAIGN_NAME, SPEND, LEADS, IMPRESSIONS, CLICKS, CPM, CPC, CTR, ADSET_NAME, AD_NAME
+  - Used for campaign-filtered queries (spend/leads per campaign)
 
 ## Key Features
 - Location tabs that dynamically load from Snowflake's LOCATION_MAP
@@ -48,7 +51,8 @@ Full-stack web dashboard for Revryze (pre-launch membership sales company) that 
 - LTV callout with configurable attrition model (attrition rate or avg monthly stay)
 - Two line charts: Daily Ad Spend + Cumulative Memberships with projection trajectory
 - Sales Velocity section with projected membership count by opening day
-- Collapsible Settings panel for location dates
+- Per-location campaign filter (checkboxes in Settings panel) — filters ad spend/leads from META_ADS table; memberships/revenue always from DASHBOARD_DAILY (GHL data isn't campaign-specific)
+- Collapsible Settings panel for location dates and campaign selection
 - Graceful fallback to sample data when Snowflake is unavailable
 
 ## Snowflake Connection Strategy

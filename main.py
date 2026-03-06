@@ -25,8 +25,8 @@ app.add_middleware(
 CONFIG_PATH = Path("config.json")
 DEFAULT_CONFIG = {
     "locations": {
-        "Highland Village": {"sales_start_date": "2026-01-15", "opening_date": "2026-06-01"},
-        "Lakeview": {"sales_start_date": "2026-01-20", "opening_date": "2026-07-01"},
+        "Highland Village": {"sales_start_date": "2026-01-15", "opening_date": "2026-06-01", "selected_campaigns": []},
+        "Lakeview": {"sales_start_date": "2026-01-20", "opening_date": "2026-07-01", "selected_campaigns": []},
     },
     "attrition": {"mode": "attrition_rate", "attrition_rate": 5.0, "avg_monthly_stay": 12},
 }
@@ -39,7 +39,15 @@ def load_config():
         save_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG
     with open(CONFIG_PATH, "r") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    changed = False
+    for loc_name, loc_cfg in cfg.get("locations", {}).items():
+        if "selected_campaigns" not in loc_cfg:
+            loc_cfg["selected_campaigns"] = []
+            changed = True
+    if changed:
+        save_config(cfg)
+    return cfg
 
 
 def save_config(cfg):
@@ -181,37 +189,104 @@ def get_locations():
     return FALLBACK_LOCATIONS
 
 
+@app.get("/api/campaigns")
+def get_campaigns(location: str):
+    conn = get_snowflake_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT CAMPAIGN_NAME FROM REVRYZE.ANALYTICS.META_ADS "
+                "WHERE LOCATION_NAME = %s AND CAMPAIGN_NAME IS NOT NULL "
+                "ORDER BY CAMPAIGN_NAME ASC",
+                [location],
+            )
+            return [r[0] for r in cur.fetchall()]
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return []
+
+
+def _parse_campaigns(campaigns_str):
+    if not campaigns_str:
+        return []
+    return [c.strip() for c in campaigns_str.split(",") if c.strip()]
+
+
 @app.get("/api/summary")
-def get_summary(location: str, start_date: str = None, end_date: str = None):
+def get_summary(location: str, start_date: str = None, end_date: str = None, campaigns: str = None):
+    campaign_list = _parse_campaigns(campaigns)
     conn = get_snowflake_conn()
     snowflake_ok = False
 
     if conn:
         try:
             cur = conn.cursor()
-            query = """
-                SELECT
-                    COALESCE(SUM(DAILY_SPEND), 0) AS total_ad_spend,
-                    COALESCE(SUM(DAILY_LEADS), 0) AS total_meta_leads,
-                    COALESCE(SUM(DAILY_MEMBERSHIPS_SOLD), 0) AS memberships_sold,
-                    COALESCE(SUM(DAILY_REVENUE), 0) AS total_membership_revenue
-                FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
-                WHERE LOCATION_NAME = %s
-            """
-            params = [location]
-            if start_date:
-                query += " AND DATE >= %s"
-                params.append(start_date)
-            if end_date:
-                query += " AND DATE <= %s"
-                params.append(end_date)
+            if campaign_list:
+                placeholders = ", ".join(["%s"] * len(campaign_list))
+                meta_query = f"""
+                    SELECT
+                        COALESCE(SUM(SPEND), 0),
+                        COALESCE(SUM(LEADS), 0)
+                    FROM REVRYZE.ANALYTICS.META_ADS
+                    WHERE LOCATION_NAME = %s
+                      AND CAMPAIGN_NAME IN ({placeholders})
+                """
+                meta_params = [location] + campaign_list
+                if start_date:
+                    meta_query += " AND DATE_START >= %s"
+                    meta_params.append(start_date)
+                if end_date:
+                    meta_query += " AND DATE_START <= %s"
+                    meta_params.append(end_date)
+                cur.execute(meta_query, meta_params)
+                meta_row = cur.fetchone()
+                total_ad_spend = float(meta_row[0])
+                total_meta_leads = int(meta_row[1])
 
-            cur.execute(query, params)
-            row = cur.fetchone()
-            total_ad_spend = float(row[0])
-            total_meta_leads = int(row[1])
-            memberships_sold = int(row[2])
-            total_membership_revenue = float(row[3])
+                ghl_query = """
+                    SELECT
+                        COALESCE(SUM(DAILY_MEMBERSHIPS_SOLD), 0),
+                        COALESCE(SUM(DAILY_REVENUE), 0)
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                    WHERE LOCATION_NAME = %s
+                """
+                ghl_params = [location]
+                if start_date:
+                    ghl_query += " AND DATE >= %s"
+                    ghl_params.append(start_date)
+                if end_date:
+                    ghl_query += " AND DATE <= %s"
+                    ghl_params.append(end_date)
+                cur.execute(ghl_query, ghl_params)
+                ghl_row = cur.fetchone()
+                memberships_sold = int(ghl_row[0])
+                total_membership_revenue = float(ghl_row[1])
+            else:
+                query = """
+                    SELECT
+                        COALESCE(SUM(DAILY_SPEND), 0) AS total_ad_spend,
+                        COALESCE(SUM(DAILY_LEADS), 0) AS total_meta_leads,
+                        COALESCE(SUM(DAILY_MEMBERSHIPS_SOLD), 0) AS memberships_sold,
+                        COALESCE(SUM(DAILY_REVENUE), 0) AS total_membership_revenue
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                    WHERE LOCATION_NAME = %s
+                """
+                params = [location]
+                if start_date:
+                    query += " AND DATE >= %s"
+                    params.append(start_date)
+                if end_date:
+                    query += " AND DATE <= %s"
+                    params.append(end_date)
+                cur.execute(query, params)
+                row = cur.fetchone()
+                total_ad_spend = float(row[0])
+                total_meta_leads = int(row[1])
+                memberships_sold = int(row[2])
+                total_membership_revenue = float(row[3])
             snowflake_ok = True
         except Exception:
             pass
@@ -254,32 +329,60 @@ def get_summary(location: str, start_date: str = None, end_date: str = None):
 
 
 @app.get("/api/daily")
-def get_daily(location: str, start_date: str = None, end_date: str = None):
+def get_daily(location: str, start_date: str = None, end_date: str = None, campaigns: str = None):
+    campaign_list = _parse_campaigns(campaigns)
     conn = get_snowflake_conn()
     if conn:
         try:
             cur = conn.cursor()
-            query = """
-                SELECT
-                    LOCATION_NAME,
-                    DATE AS REPORT_DATE,
-                    DAILY_SPEND AS AD_SPEND,
-                    DAILY_LEADS AS META_LEADS,
-                    DAILY_MEMBERSHIPS_SOLD AS MEMBERSHIPS_SOLD,
-                    DAILY_REVENUE AS MEMBERSHIP_REVENUE,
-                    CUMULATIVE_MEMBERSHIPS,
-                    CUMULATIVE_SPEND
-                FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
-                WHERE LOCATION_NAME = %s
-            """
-            params = [location]
+            if campaign_list:
+                placeholders = ", ".join(["%s"] * len(campaign_list))
+                query = f"""
+                    SELECT
+                        d.LOCATION_NAME,
+                        d.DATE AS REPORT_DATE,
+                        COALESCE(m.AD_SPEND, 0) AS AD_SPEND,
+                        COALESCE(m.META_LEADS, 0) AS META_LEADS,
+                        d.DAILY_MEMBERSHIPS_SOLD AS MEMBERSHIPS_SOLD,
+                        d.DAILY_REVENUE AS MEMBERSHIP_REVENUE,
+                        d.CUMULATIVE_MEMBERSHIPS,
+                        d.CUMULATIVE_SPEND
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY d
+                    LEFT JOIN (
+                        SELECT DATE_START, SUM(SPEND) AS AD_SPEND, SUM(LEADS) AS META_LEADS
+                        FROM REVRYZE.ANALYTICS.META_ADS
+                        WHERE LOCATION_NAME = %s
+                          AND CAMPAIGN_NAME IN ({placeholders})
+                        GROUP BY DATE_START
+                    ) m ON d.DATE = m.DATE_START
+                    WHERE d.LOCATION_NAME = %s
+                """
+                params = [location] + campaign_list + [location]
+            else:
+                query = """
+                    SELECT
+                        LOCATION_NAME,
+                        DATE AS REPORT_DATE,
+                        DAILY_SPEND AS AD_SPEND,
+                        DAILY_LEADS AS META_LEADS,
+                        DAILY_MEMBERSHIPS_SOLD AS MEMBERSHIPS_SOLD,
+                        DAILY_REVENUE AS MEMBERSHIP_REVENUE,
+                        CUMULATIVE_MEMBERSHIPS,
+                        CUMULATIVE_SPEND
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                    WHERE LOCATION_NAME = %s
+                """
+                params = [location]
             if start_date:
-                query += " AND DATE >= %s"
+                date_col = "d.DATE" if campaign_list else "DATE"
+                query += f" AND {date_col} >= %s"
                 params.append(start_date)
             if end_date:
-                query += " AND DATE <= %s"
+                date_col = "d.DATE" if campaign_list else "DATE"
+                query += f" AND {date_col} <= %s"
                 params.append(end_date)
-            query += " ORDER BY DATE ASC"
+            order_col = "d.DATE" if campaign_list else "DATE"
+            query += f" ORDER BY {order_col} ASC"
             cur.execute(query, params)
 
             columns = [desc[0].lower() for desc in cur.description]

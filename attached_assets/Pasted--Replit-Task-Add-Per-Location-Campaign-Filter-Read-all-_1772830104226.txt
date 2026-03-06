@@ -1,0 +1,141 @@
+# Replit Task: Add Per-Location Campaign Filter
+
+Read all existing files before making any changes. Understand the full current structure of `main.py` and `frontend/index.html` before touching anything.
+
+---
+
+## What to build
+
+Add the ability for a user to select which Meta campaigns count toward the dashboard metrics, on a per-location basis. The selection is saved in `config.json` and applied to all data queries for that location.
+
+---
+
+## Backend changes — main.py
+
+### 1. New endpoint: GET /api/campaigns
+
+Add this endpoint. It returns all distinct campaign names from Snowflake for a given location.
+
+```python
+@app.get("/api/campaigns")
+def get_campaigns(location: str):
+    # Query REVRYZE.ANALYTICS.META_ADS filtered by LOCATION_NAME
+    # Return distinct CAMPAIGN_NAME values sorted alphabetically
+    # Response: ["Campaign A", "Campaign B", "Campaign C"]
+```
+
+SQL to use:
+```sql
+SELECT DISTINCT CAMPAIGN_NAME
+FROM REVRYZE.ANALYTICS.META_ADS
+WHERE LOCATION_NAME = :location
+  AND CAMPAIGN_NAME IS NOT NULL
+ORDER BY CAMPAIGN_NAME ASC
+```
+
+### 2. Apply campaign filter to existing summary and daily endpoints
+
+In both `/api/summary` and `/api/daily`:
+
+- Accept an optional query parameter: `campaigns` (comma-separated list of campaign names)
+- If `campaigns` is provided and non-empty, add a `WHERE CAMPAIGN_NAME IN (...)` filter to the Snowflake queries against `REVRYZE.ANALYTICS.DASHBOARD_DAILY` and the underlying Meta data
+- If `campaigns` is empty or not provided, return all campaigns (no filter — existing behavior)
+
+The filtering needs to happen in the SQL queries that hit `REVRYZE.ANALYTICS.DASHBOARD_DAILY`. Since that view joins Meta and GHL data, the campaign filter should only affect the Meta-side columns (spend, leads). GHL membership data is not affected by campaign filter.
+
+To handle this cleanly, modify the queries in `/api/summary` and `/api/daily` to join `REVRYZE.ANALYTICS.META_ADS` directly when a campaign filter is active, rather than relying solely on `DASHBOARD_DAILY`. Alternatively, add a campaign filter parameter to the existing query using a subquery or CTE. Use whichever approach is cleaner given the existing code.
+
+---
+
+## Config changes
+
+Update `config.json` structure to include `selected_campaigns` per location:
+
+```json
+{
+  "locations": {
+    "Highland Village": {
+      "sales_start_date": "2026-01-15",
+      "opening_date": "2026-06-01",
+      "selected_campaigns": []
+    },
+    "Lakeview": {
+      "sales_start_date": "2026-01-20",
+      "opening_date": "2026-06-01",
+      "selected_campaigns": []
+    }
+  },
+  "attrition": {
+    "mode": "attrition_rate",
+    "attrition_rate": 5.0,
+    "avg_monthly_stay": 12
+  }
+}
+```
+
+`selected_campaigns` is an array of campaign name strings. Empty array = no filter (show all).
+
+Migrate the existing `config.json` on load — if `selected_campaigns` is missing for a location, default it to `[]`.
+
+---
+
+## Frontend changes — frontend/index.html
+
+### 1. Fetch campaigns on location change
+
+When the active location changes, fetch available campaigns:
+```javascript
+const campaignsRes = await fetch(`/api/campaigns?location=${encodeURIComponent(loc)}`);
+const availableCampaigns = await campaignsRes.json();
+```
+
+Store in state: `const [availableCampaigns, setAvailableCampaigns] = useState([]);`
+
+### 2. Pass selected campaigns to data fetch
+
+When calling `/api/summary` and `/api/daily`, append the selected campaigns from config:
+```javascript
+const selectedCampaigns = config?.locations?.[loc]?.selected_campaigns || [];
+if (selectedCampaigns.length > 0) {
+  const encoded = selectedCampaigns.map(c => encodeURIComponent(c)).join(",");
+  summaryUrl += `&campaigns=${encoded}`;
+  dailyUrl += `&campaigns=${encoded}`;
+}
+```
+
+### 3. Add campaign selector to Settings panel
+
+Inside the existing collapsible Settings panel, below the Opening Date and Sales Start Date inputs, add:
+
+```
+Campaign Filter — {activeLocation}
+```
+
+- Show a list of checkboxes, one per available campaign (loaded from `/api/campaigns`)
+- Pre-check campaigns that are in `config.locations[activeLocation].selected_campaigns`
+- If `selected_campaigns` is empty, all checkboxes are unchecked (meaning "show all")
+- When a checkbox is toggled, update `config.locations[activeLocation].selected_campaigns` and POST to `/api/config`
+- After saving, re-fetch summary and daily data so the dashboard updates immediately
+- Add a small "Clear filter (show all)" link/button that unchecks all campaigns
+
+UI notes:
+- Show campaigns in a scrollable container if there are more than 6 (max height ~200px, overflow-y scroll)
+- Style checkboxes with `accent-blue-500`
+- Add a note below: "No campaigns selected = all campaigns included"
+
+---
+
+## What NOT to change
+
+- The KPI cards
+- The LTV callout block
+- The charts
+- The Sales Velocity section
+- Any Snowflake connection logic
+- Any other endpoints
+
+---
+
+## Output
+
+Modify `main.py` and `frontend/index.html` in place. No other files need to change except `config.json` structure (which updates at runtime).

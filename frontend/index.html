@@ -28,7 +28,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useRef } = React;
     const {
       LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
     } = Recharts;
@@ -65,6 +65,7 @@
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [settingsOpen, setSettingsOpen] = useState(false);
+      const [availableCampaigns, setAvailableCampaigns] = useState([]);
 
       const getDateParams = useCallback(() => {
         const today = new Date();
@@ -87,7 +88,7 @@
         return { start, end };
       }, [dateRange, customStart, customEnd]);
 
-      const fetchData = useCallback(async (loc) => {
+      const fetchData = useCallback(async (loc, cfg) => {
         if (!loc) return;
         setLoading(true);
         setError(null);
@@ -97,18 +98,30 @@
           let dailyUrl = `/api/daily?location=${encodeURIComponent(loc)}`;
           if (start) { summaryUrl += `&start_date=${start}`; dailyUrl += `&start_date=${start}`; }
           if (end) { summaryUrl += `&end_date=${end}`; dailyUrl += `&end_date=${end}`; }
+          const selectedCampaigns = cfg?.locations?.[loc]?.selected_campaigns || [];
+          if (selectedCampaigns.length > 0) {
+            const encoded = selectedCampaigns.map(c => encodeURIComponent(c)).join(",");
+            summaryUrl += `&campaigns=${encoded}`;
+            dailyUrl += `&campaigns=${encoded}`;
+          }
 
-          const [sRes, dRes] = await Promise.all([fetch(summaryUrl), fetch(dailyUrl)]);
+          const [sRes, dRes, cRes] = await Promise.all([
+            fetch(summaryUrl), fetch(dailyUrl),
+            fetch(`/api/campaigns?location=${encodeURIComponent(loc)}`)
+          ]);
           if (!sRes.ok) throw new Error("Failed to fetch summary");
           if (!dRes.ok) throw new Error("Failed to fetch daily data");
           setSummary(await sRes.json());
           setDaily(await dRes.json());
+          if (cRes.ok) { const camps = await cRes.json(); setAvailableCampaigns(camps); }
         } catch (e) {
           setError(e.message);
         } finally {
           setLoading(false);
         }
       }, [getDateParams]);
+
+      const initialLoadDone = useRef(false);
 
       useEffect(() => {
         (async () => {
@@ -119,7 +132,10 @@
             setLocations(locs);
             setConfig(cfg);
             if (locs.length > 0) {
-              setActiveLocation(locs[0]);
+              const firstLoc = locs[0];
+              setActiveLocation(firstLoc);
+              initialLoadDone.current = true;
+              fetchData(firstLoc, cfg);
             }
           } catch (e) {
             setError("Failed to load initial data: " + e.message);
@@ -129,8 +145,26 @@
       }, []);
 
       useEffect(() => {
-        if (activeLocation) fetchData(activeLocation);
-      }, [activeLocation, fetchData]);
+        if (activeLocation && initialLoadDone.current) {
+          fetchData(activeLocation, config);
+        }
+      }, [activeLocation]);
+
+      useEffect(() => {
+        if (activeLocation && initialLoadDone.current && dateRange !== "custom") {
+          fetchData(activeLocation, config);
+        }
+      }, [dateRange]);
+
+      useEffect(() => {
+        if (!summary || summary.data_source === "snowflake") return;
+        const interval = setInterval(() => {
+          if (activeLocation && initialLoadDone.current) {
+            fetchData(activeLocation, config);
+          }
+        }, 10000);
+        return () => clearInterval(interval);
+      }, [summary?.data_source, activeLocation]);
 
       const saveConfig = async (newCfg) => {
         setConfig(newCfg);
@@ -145,12 +179,12 @@
         if (!config) return;
         const newCfg = JSON.parse(JSON.stringify(config));
         if (!newCfg.locations[activeLocation]) {
-          newCfg.locations[activeLocation] = { sales_start_date: null, opening_date: null };
+          newCfg.locations[activeLocation] = { sales_start_date: null, opening_date: null, selected_campaigns: [] };
         }
         newCfg.locations[activeLocation][field] = value || null;
         saveConfig(newCfg);
         if (field === "sales_start_date") {
-          fetchData(activeLocation);
+          fetchData(activeLocation, newCfg);
         }
       };
 
@@ -159,6 +193,35 @@
         const newCfg = JSON.parse(JSON.stringify(config));
         newCfg.attrition[field] = field === "mode" ? value : parseFloat(value) || 0;
         saveConfig(newCfg);
+      };
+
+      const toggleCampaign = (campaignName) => {
+        if (!config) return;
+        const newCfg = JSON.parse(JSON.stringify(config));
+        if (!newCfg.locations[activeLocation]) {
+          newCfg.locations[activeLocation] = { sales_start_date: null, opening_date: null, selected_campaigns: [] };
+        }
+        const sel = newCfg.locations[activeLocation].selected_campaigns || [];
+        const idx = sel.indexOf(campaignName);
+        if (idx >= 0) {
+          sel.splice(idx, 1);
+        } else {
+          sel.push(campaignName);
+        }
+        newCfg.locations[activeLocation].selected_campaigns = sel;
+        saveConfig(newCfg);
+        fetchData(activeLocation, newCfg);
+      };
+
+      const clearCampaignFilter = () => {
+        if (!config) return;
+        const newCfg = JSON.parse(JSON.stringify(config));
+        if (!newCfg.locations[activeLocation]) {
+          newCfg.locations[activeLocation] = { sales_start_date: null, opening_date: null, selected_campaigns: [] };
+        }
+        newCfg.locations[activeLocation].selected_campaigns = [];
+        saveConfig(newCfg);
+        fetchData(activeLocation, newCfg);
       };
 
       const locConfig = config?.locations?.[activeLocation] || {};
@@ -272,7 +335,7 @@
                   className="rounded-lg text-sm"
                 />
                 <button
-                  onClick={() => fetchData(activeLocation)}
+                  onClick={() => fetchData(activeLocation, config)}
                   className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold px-4 py-2 rounded-lg text-sm"
                 >
                   Apply
@@ -476,6 +539,37 @@
                           className="w-full rounded-lg"
                         />
                       </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm text-slate-400 font-medium">Campaign Filter — {activeLocation}</label>
+                        {(locConfig.selected_campaigns || []).length > 0 && (
+                          <button
+                            onClick={clearCampaignFilter}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 underline"
+                          >
+                            Clear filter (show all)
+                          </button>
+                        )}
+                      </div>
+                      {availableCampaigns.length > 0 ? (
+                        <div className="space-y-2" style={{ maxHeight: "200px", overflowY: "auto" }}>
+                          {availableCampaigns.map((c) => (
+                            <label key={c} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(locConfig.selected_campaigns || []).includes(c)}
+                                onChange={() => toggleCampaign(c)}
+                                className="accent-emerald-400"
+                              />
+                              {c}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-500 italic">No campaigns available</div>
+                      )}
+                      <div className="text-xs text-slate-500 mt-2">No campaigns selected = all campaigns included</div>
                     </div>
                   </div>
                 )}
