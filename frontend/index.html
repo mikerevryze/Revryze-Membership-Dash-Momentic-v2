@@ -157,7 +157,7 @@
       }, [dateRange]);
 
       useEffect(() => {
-        if (!summary || summary.data_source === "snowflake") return;
+        if (!summary || summary.data_source === "snowflake" || summary.data_source === "cached") return;
         const interval = setInterval(() => {
           if (activeLocation && initialLoadDone.current) {
             fetchData(activeLocation, config);
@@ -353,6 +353,11 @@
           {summary && summary.data_source === "sample" && (
             <div className="bg-amber-900/30 border border-amber-600/30 text-amber-300 px-4 py-2.5 rounded-lg mb-6 text-sm">
               Showing sample data — Snowflake is not connected. Data will update automatically once Snowflake is available.
+            </div>
+          )}
+          {summary && summary.data_source === "cached" && (
+            <div className="text-slate-500 text-xs mb-4">
+              Showing last cached data
             </div>
           )}
 
