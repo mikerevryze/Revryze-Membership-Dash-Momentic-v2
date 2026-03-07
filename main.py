@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time
 import threading
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -116,17 +117,23 @@ def _probe_snowflake_loop():
 threading.Thread(target=_probe_snowflake_loop, daemon=True).start()
 
 
-def get_snowflake_conn():
+def get_snowflake_conn(retries=5, retry_delay=2):
     if not _snowflake_available:
         return None
-    try:
-        conn = snowflake.connector.connect(
-            login_timeout=5, network_timeout=10,
-            **_sf_env,
-        )
-        return conn
-    except Exception:
-        return None
+    for attempt in range(retries):
+        try:
+            conn = snowflake.connector.connect(
+                login_timeout=15, network_timeout=15,
+                **_sf_env,
+            )
+            return conn
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"[CONN] Attempt {attempt+1}/{retries} failed: {e}, retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                print(f"[CONN] All {retries} attempts failed: {e}")
+    return None
 
 
 def _reset_probe():
@@ -141,6 +148,32 @@ def reset_snowflake():
     _snowflake_available = False
     threading.Thread(target=_reset_probe, daemon=True).start()
     return {"status": "Snowflake connection cache cleared. Retrying in background."}
+
+
+@app.on_event("startup")
+def warmup_snowflake():
+    def _warmup():
+        global _snowflake_available
+        for i in range(30):
+            if _snowflake_available:
+                break
+            time.sleep(1)
+        if not _snowflake_available:
+            print("[WARMUP] Snowflake not available yet, skipping warmup")
+            return
+        try:
+            conn = snowflake.connector.connect(
+                login_timeout=15, network_timeout=15,
+                **_sf_env,
+            )
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            print("[WARMUP] Warehouse warmed up with SELECT 1")
+            conn.close()
+        except Exception as e:
+            print(f"[WARMUP] Failed to warm warehouse: {e}")
+    threading.Thread(target=_warmup, daemon=True).start()
 
 
 def generate_fallback_daily(location, start_date_str=None, end_date_str=None):
