@@ -64,7 +64,7 @@ _sf_env = {
     "password": os.environ.get("SNOWFLAKE_PASSWORD", "ChavezDog16!!!"),
     "database": os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE"),
     "schema": os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS"),
-    "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "INGEST_WH"),
+    "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "DASHBOARD_WH"),
 }
 
 print(f"[STARTUP] SNOWFLAKE_PASSWORD source: {'env var' if os.environ.get('SNOWFLAKE_PASSWORD') else 'fallback'}")
