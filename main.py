@@ -2,7 +2,7 @@ import os
 import json
 import random
 import time
-import threading
+
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -56,9 +56,8 @@ def save_config(cfg):
         json.dump(cfg, f, indent=2)
 
 
-_snowflake_available = False
 _cache = {}
-_CACHE_TIMEOUT = 8
+_CACHE_TIMEOUT = 600
 
 _sf_env = {
     "account": os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1"),
@@ -74,108 +73,97 @@ print(f"[STARTUP] SNOWFLAKE_PASSWORD length: {len(_sf_env['password'])}")
 print(f"[STARTUP] Snowflake account: {_sf_env['account']}, user: {_sf_env['user']}")
 
 
-def _run_snowflake_probe():
-    import subprocess, sys
+def get_snowflake_conn():
     try:
-        result = subprocess.run(
-            [sys.executable, "-c",
-             "import snowflake.connector; "
-             "snowflake.connector.connect("
-             f"account='{_sf_env['account']}', "
-             f"user='{_sf_env['user']}', "
-             f"password='{_sf_env['password']}', "
-             f"database='{_sf_env['database']}', "
-             f"schema='{_sf_env['schema']}', "
-             f"warehouse='{_sf_env['warehouse']}', "
-             "login_timeout=5, network_timeout=10).close(); "
-             "print('OK')"],
-            capture_output=True, text=True, timeout=30
+        conn = snowflake.connector.connect(
+            login_timeout=30, network_timeout=30,
+            **_sf_env,
         )
-        print(f"[PROBE] stdout={result.stdout.strip()!r}, stderr={result.stderr.strip()[:200]!r}")
-        return result.stdout.strip() == "OK"
+        return conn
     except Exception as e:
-        print(f"[PROBE] Exception: {e}")
-        return False
-
-
-def _probe_snowflake_loop():
-    import time as _time
-    global _snowflake_available
-    _time.sleep(5)
-    retry_intervals = [0, 30, 60, 120, 300]
-    for i, wait in enumerate(retry_intervals):
-        if _snowflake_available:
-            return
-        if wait > 0:
-            _time.sleep(wait)
-        print(f"[PROBE] Attempt {i+1}/{len(retry_intervals)}")
-        if _run_snowflake_probe():
-            _snowflake_available = True
-            print("[PROBE] Snowflake connected successfully!")
-            return
-    print("[PROBE] All attempts exhausted, Snowflake not available")
-
-
-threading.Thread(target=_probe_snowflake_loop, daemon=True).start()
-
-
-def get_snowflake_conn(retries=5, retry_delay=2):
-    if not _snowflake_available:
+        print(f"[CONN] Snowflake connection failed: {e}")
         return None
-    for attempt in range(retries):
-        try:
-            conn = snowflake.connector.connect(
-                login_timeout=15, network_timeout=15,
-                **_sf_env,
-            )
-            return conn
-        except Exception as e:
-            if attempt < retries - 1:
-                print(f"[CONN] Attempt {attempt+1}/{retries} failed: {e}, retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
-            else:
-                print(f"[CONN] All {retries} attempts failed: {e}")
-    return None
-
-
-def _reset_probe():
-    global _snowflake_available
-    if _run_snowflake_probe():
-        _snowflake_available = True
 
 
 @app.get("/api/reset-snowflake")
 def reset_snowflake():
-    global _snowflake_available
-    _snowflake_available = False
-    threading.Thread(target=_reset_probe, daemon=True).start()
-    return {"status": "Snowflake connection cache cleared. Retrying in background."}
+    _cache.clear()
+    return {"status": "Cache cleared. Next request will query Snowflake directly."}
 
 
 @app.on_event("startup")
 def warmup_snowflake():
-    def _warmup():
-        global _snowflake_available
-        for i in range(30):
-            if _snowflake_available:
-                break
-            time.sleep(1)
-        if not _snowflake_available:
-            print("[WARMUP] Snowflake not available yet, skipping warmup")
-            return
-        try:
-            conn = snowflake.connector.connect(
-                login_timeout=15, network_timeout=15,
-                **_sf_env,
-            )
-            cur = conn.cursor()
-            cur.execute("SELECT 1")
-            cur.fetchone()
-            print("[WARMUP] Warehouse warmed up with SELECT 1")
-            conn.close()
-        except Exception as e:
-            print(f"[WARMUP] Failed to warm warehouse: {e}")
-    threading.Thread(target=_warmup, daemon=True).start()
+    print("[STARTUP] Attempting synchronous Snowflake connection...")
+    try:
+        conn = snowflake.connector.connect(
+            login_timeout=30, network_timeout=30,
+            **_sf_env,
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        print("[STARTUP] Snowflake connected and warehouse warmed up")
+
+        cur.execute("SELECT LOCATION_NAME FROM REVRYZE.ANALYTICS.LOCATION_MAP ORDER BY LOCATION_NAME")
+        locations = [r[0] for r in cur.fetchall()]
+        print(f"[STARTUP] Found locations: {locations}")
+
+        for loc in locations:
+            try:
+                cur.execute("""
+                    SELECT
+                        COALESCE(SUM(DAILY_SPEND), 0),
+                        COALESCE(SUM(DAILY_LEADS), 0),
+                        COALESCE(SUM(DAILY_MEMBERSHIPS_SOLD), 0),
+                        COALESCE(SUM(DAILY_REVENUE), 0)
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                    WHERE LOCATION_NAME = %s
+                """, [loc])
+                row = cur.fetchone()
+                summary_data = {
+                    "total_ad_spend": float(row[0]),
+                    "total_meta_leads": int(row[1]),
+                    "memberships_sold": int(row[2]),
+                    "total_membership_revenue": float(row[3]),
+                }
+                cache_key = f"summary:{loc}:None:None:None"
+                _cache[cache_key] = {"data": summary_data, "ts": time.time()}
+
+                cur.execute("""
+                    SELECT
+                        LOCATION_NAME, DATE AS REPORT_DATE,
+                        DAILY_SPEND AS AD_SPEND, DAILY_LEADS AS META_LEADS,
+                        DAILY_MEMBERSHIPS_SOLD AS MEMBERSHIPS_SOLD,
+                        DAILY_REVENUE AS MEMBERSHIP_REVENUE,
+                        CUMULATIVE_MEMBERSHIPS, CUMULATIVE_SPEND
+                    FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY
+                    WHERE LOCATION_NAME = %s ORDER BY DATE ASC
+                """, [loc])
+                columns = [desc[0].lower() for desc in cur.description]
+                rows = cur.fetchall()
+                daily_data = []
+                for r in rows:
+                    record = {}
+                    for i, col in enumerate(columns):
+                        val = r[i]
+                        if isinstance(val, (date, datetime)):
+                            val = val.isoformat()[:10]
+                        elif isinstance(val, Decimal):
+                            val = float(val)
+                        record[col] = val
+                    daily_data.append(record)
+                daily_cache_key = f"daily:{loc}:None:None:None"
+                _cache[daily_cache_key] = {"data": daily_data, "ts": time.time()}
+
+                print(f"[STARTUP] Pre-cached summary and daily for {loc}")
+            except Exception as e:
+                print(f"[STARTUP] Failed to pre-cache {loc}: {e}")
+
+        conn.close()
+        print("[STARTUP] Snowflake startup complete — cache pre-populated")
+    except Exception as e:
+        print(f"[STARTUP] Snowflake connection failed at startup: {e}")
+        print("[STARTUP] App will attempt direct connections per request")
 
 
 def generate_fallback_daily(location, start_date_str=None, end_date_str=None):
@@ -345,19 +333,16 @@ def get_summary(location: str, start_date: str = None, end_date: str = None, cam
     campaign_list = _parse_campaigns(campaigns)
     cache_key = f"summary:{location}:{start_date}:{end_date}:{campaigns}"
 
-    snowflake_data = None
-    t0 = time.time()
     snowflake_data = _query_summary_from_snowflake(location, start_date, end_date, campaign_list)
-    elapsed = time.time() - t0
 
-    if snowflake_data and elapsed <= _CACHE_TIMEOUT:
+    if snowflake_data:
         data_source = "snowflake"
         total_ad_spend = snowflake_data["total_ad_spend"]
         total_meta_leads = snowflake_data["total_meta_leads"]
         memberships_sold = snowflake_data["memberships_sold"]
         total_membership_revenue = snowflake_data["total_membership_revenue"]
         _cache[cache_key] = {"data": snowflake_data, "ts": time.time()}
-    elif cache_key in _cache:
+    elif cache_key in _cache and (time.time() - _cache[cache_key]["ts"]) < _CACHE_TIMEOUT:
         data_source = "cached"
         cached = _cache[cache_key]["data"]
         total_ad_spend = cached["total_ad_spend"]
@@ -483,15 +468,13 @@ def get_daily(location: str, start_date: str = None, end_date: str = None, campa
     campaign_list = _parse_campaigns(campaigns)
     cache_key = f"daily:{location}:{start_date}:{end_date}:{campaigns}"
 
-    t0 = time.time()
     snowflake_data = _query_daily_from_snowflake(location, start_date, end_date, campaign_list)
-    elapsed = time.time() - t0
 
-    if snowflake_data is not None and elapsed <= _CACHE_TIMEOUT:
+    if snowflake_data is not None:
         _cache[cache_key] = {"data": snowflake_data, "ts": time.time()}
         return snowflake_data
-    elif cache_key in _cache:
-        rows = _cache[cache_key]["data"]
+    elif cache_key in _cache and (time.time() - _cache[cache_key]["ts"]) < _CACHE_TIMEOUT:
+        rows = [dict(r) for r in _cache[cache_key]["data"]]
         for r in rows:
             r["data_source"] = "cached"
         return rows
