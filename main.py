@@ -91,6 +91,24 @@ def reset_snowflake():
     return {"status": "Cache cleared. Next request will query Snowflake directly."}
 
 
+@app.get("/api/debug")
+def debug_snowflake():
+    import socket
+    try:
+        ip = socket.getaddrinfo("VSC78986.us-east-1.snowflakecomputing.com", 443)
+        dns_result = str(ip[0])
+    except Exception as e:
+        dns_result = str(e)
+
+    return {
+        "dns_resolution": dns_result,
+        "snowflake_account": os.environ.get("SNOWFLAKE_ACCOUNT", "NOT SET"),
+        "snowflake_user": os.environ.get("SNOWFLAKE_USERNAME", "NOT SET"),
+        "snowflake_warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "NOT SET"),
+        "snowflake_password_set": bool(os.environ.get("SNOWFLAKE_PASSWORD")),
+    }
+
+
 @app.on_event("startup")
 def warmup_snowflake():
     print("[STARTUP] Attempting synchronous Snowflake connection...")
