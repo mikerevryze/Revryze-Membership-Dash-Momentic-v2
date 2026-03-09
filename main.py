@@ -100,8 +100,19 @@ def debug_snowflake():
     except Exception as e:
         dns_result = str(e)
 
+    try:
+        sock = socket.create_connection(
+            ("VSC78986.us-east-1.snowflakecomputing.com", 443),
+            timeout=10
+        )
+        sock.close()
+        tcp_result = "SUCCESS - port 443 reachable"
+    except Exception as e:
+        tcp_result = f"FAILED - {str(e)}"
+
     return {
         "dns_resolution": dns_result,
+        "tcp_connection": tcp_result,
         "snowflake_account": os.environ.get("SNOWFLAKE_ACCOUNT", "NOT SET"),
         "snowflake_user": os.environ.get("SNOWFLAKE_USERNAME", "NOT SET"),
         "snowflake_warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "NOT SET"),
