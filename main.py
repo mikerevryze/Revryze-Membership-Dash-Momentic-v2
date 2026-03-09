@@ -110,9 +110,27 @@ def debug_snowflake():
     except Exception as e:
         tcp_result = f"FAILED - {str(e)}"
 
+    try:
+        conn = snowflake.connector.connect(
+            account=os.environ.get("SNOWFLAKE_ACCOUNT"),
+            user=os.environ.get("SNOWFLAKE_USERNAME"),
+            password=os.environ.get("SNOWFLAKE_PASSWORD"),
+            database=os.environ.get("SNOWFLAKE_DATABASE"),
+            warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE"),
+            ocsp_fail_open=True,
+            login_timeout=30
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        conn.close()
+        sf_result = "SUCCESS"
+    except Exception as e:
+        sf_result = f"FAILED: {type(e).__name__}: {str(e)}"
+
     return {
         "dns_resolution": dns_result,
         "tcp_connection": tcp_result,
+        "snowflake_connection": sf_result,
         "snowflake_account": os.environ.get("SNOWFLAKE_ACCOUNT", "NOT SET"),
         "snowflake_user": os.environ.get("SNOWFLAKE_USERNAME", "NOT SET"),
         "snowflake_warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "NOT SET"),
