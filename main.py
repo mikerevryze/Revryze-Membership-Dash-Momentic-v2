@@ -1,9 +1,8 @@
 import os
 import json
-import random
 import time
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,8 +30,6 @@ DEFAULT_CONFIG = {
     },
     "attrition": {"mode": "attrition_rate", "attrition_rate": 5.0, "avg_monthly_stay": 12},
 }
-
-FALLBACK_LOCATIONS = ["Highland Village", "Lakeview"]
 
 
 def load_config():
@@ -213,79 +210,40 @@ def warmup_snowflake():
         print("[STARTUP] App will attempt direct connections per request")
 
 
-def generate_fallback_daily(location, start_date_str=None, end_date_str=None):
-    seed_val = hash(location) % 1000
-    rng = random.Random(seed_val)
-
-    base_start = date(2026, 1, 15) if location == "Highland Village" else date(2026, 1, 20)
-    base_end = date.today()
-
-    if start_date_str:
-        try:
-            filter_start = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-            base_start = max(base_start, filter_start)
-        except ValueError:
-            pass
-    if end_date_str:
-        try:
-            filter_end = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-            base_end = min(base_end, filter_end)
-        except ValueError:
-            pass
-
-    rows = []
-    current = base_start
-    while current <= base_end:
-        ad_spend = round(rng.uniform(15, 55), 2)
-        meta_leads = rng.randint(3, 15)
-        memberships_sold = 1 if rng.random() < 0.25 else 0
-        membership_revenue = memberships_sold * round(rng.uniform(149, 299), 2)
-        rows.append({
-            "report_date": current.isoformat(),
-            "location_name": location,
-            "ad_spend": ad_spend,
-            "meta_leads": meta_leads,
-            "memberships_sold": memberships_sold,
-            "membership_revenue": round(membership_revenue, 2),
-        })
-        current += timedelta(days=1)
-    return rows
-
-
 @app.get("/api/locations")
 def get_locations():
     conn = get_snowflake_conn()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT LOCATION_NAME FROM REVRYZE.ANALYTICS.LOCATION_MAP ORDER BY LOCATION_NAME")
-            rows = cur.fetchall()
-            return [r[0] for r in rows]
-        except Exception:
-            pass
-        finally:
-            conn.close()
-    return FALLBACK_LOCATIONS
+    if not conn:
+        raise HTTPException(status_code=500, detail="Unable to connect to Snowflake")
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT LOCATION_NAME FROM REVRYZE.ANALYTICS.LOCATION_MAP ORDER BY LOCATION_NAME")
+        rows = cur.fetchall()
+        return [r[0] for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Snowflake query failed: {e}")
+    finally:
+        conn.close()
 
 
 @app.get("/api/campaigns")
 def get_campaigns(location: str):
     conn = get_snowflake_conn()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT DISTINCT CAMPAIGN_NAME FROM REVRYZE.ANALYTICS.META_ADS "
-                "WHERE LOCATION_NAME = %s AND CAMPAIGN_NAME IS NOT NULL "
-                "ORDER BY CAMPAIGN_NAME ASC",
-                [location],
-            )
-            return [r[0] for r in cur.fetchall()]
-        except Exception:
-            pass
-        finally:
-            conn.close()
-    return []
+    if not conn:
+        raise HTTPException(status_code=500, detail="Unable to connect to Snowflake")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT CAMPAIGN_NAME FROM REVRYZE.ANALYTICS.META_ADS "
+            "WHERE LOCATION_NAME = %s AND CAMPAIGN_NAME IS NOT NULL "
+            "ORDER BY CAMPAIGN_NAME ASC",
+            [location],
+        )
+        return [r[0] for r in cur.fetchall()]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Snowflake query failed: {e}")
+    finally:
+        conn.close()
 
 
 def _parse_campaigns(campaigns_str):
@@ -397,12 +355,7 @@ def get_summary(location: str, start_date: str = None, end_date: str = None, cam
         memberships_sold = cached["memberships_sold"]
         total_membership_revenue = cached["total_membership_revenue"]
     else:
-        data_source = "sample"
-        daily_rows = generate_fallback_daily(location, start_date, end_date)
-        total_ad_spend = sum(r["ad_spend"] for r in daily_rows)
-        total_meta_leads = sum(r["meta_leads"] for r in daily_rows)
-        memberships_sold = sum(r["memberships_sold"] for r in daily_rows)
-        total_membership_revenue = sum(r["membership_revenue"] for r in daily_rows)
+        raise HTTPException(status_code=500, detail="Unable to retrieve data from Snowflake")
 
     cpl = round(total_ad_spend / total_meta_leads, 2) if total_meta_leads > 0 else 0
     cost_per_membership = round(total_ad_spend / memberships_sold, 2) if memberships_sold > 0 else 0
@@ -526,10 +479,7 @@ def get_daily(location: str, start_date: str = None, end_date: str = None, campa
             r["data_source"] = "cached"
         return rows
     else:
-        rows = generate_fallback_daily(location, start_date, end_date)
-        for r in rows:
-            r["data_source"] = "sample"
-        return rows
+        raise HTTPException(status_code=500, detail="Unable to retrieve data from Snowflake")
 
 
 @app.get("/api/config")

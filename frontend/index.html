@@ -123,26 +123,28 @@
 
       const initialLoadDone = useRef(false);
 
-      useEffect(() => {
-        (async () => {
-          try {
-            const [locRes, cfgRes] = await Promise.all([fetch("/api/locations"), fetch("/api/config")]);
-            const locs = await locRes.json();
-            const cfg = await cfgRes.json();
-            setLocations(locs);
-            setConfig(cfg);
-            if (locs.length > 0) {
-              const firstLoc = locs[0];
-              setActiveLocation(firstLoc);
-              initialLoadDone.current = true;
-              fetchData(firstLoc, cfg);
-            }
-          } catch (e) {
-            setError("Failed to load initial data: " + e.message);
-            setLoading(false);
+      const initApp = useCallback(async () => {
+        try {
+          const [locRes, cfgRes] = await Promise.all([fetch("/api/locations"), fetch("/api/config")]);
+          if (!locRes.ok) throw new Error("Failed to fetch locations");
+          const locs = await locRes.json();
+          const cfg = await cfgRes.json();
+          setLocations(locs);
+          setConfig(cfg);
+          setError(null);
+          if (locs.length > 0) {
+            const firstLoc = locs[0];
+            setActiveLocation(firstLoc);
+            initialLoadDone.current = true;
+            fetchData(firstLoc, cfg);
           }
-        })();
+        } catch (e) {
+          setError(e.message);
+          setLoading(false);
+        }
       }, []);
+
+      useEffect(() => { initApp(); }, []);
 
       useEffect(() => {
         if (activeLocation && initialLoadDone.current) {
@@ -157,14 +159,16 @@
       }, [dateRange]);
 
       useEffect(() => {
-        if (!summary || summary.data_source === "snowflake" || summary.data_source === "cached") return;
+        if (!error) return;
         const interval = setInterval(() => {
-          if (activeLocation && initialLoadDone.current) {
+          if (!initialLoadDone.current) {
+            initApp();
+          } else if (activeLocation) {
             fetchData(activeLocation, config);
           }
-        }, 10000);
+        }, 5000);
         return () => clearInterval(interval);
-      }, [summary?.data_source, activeLocation]);
+      }, [error, activeLocation]);
 
       const saveConfig = async (newCfg) => {
         setConfig(newCfg);
@@ -346,15 +350,10 @@
 
           {error && (
             <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-6">
-              {error}
+              Unable to load data — retrying...
             </div>
           )}
 
-          {summary && summary.data_source === "sample" && (
-            <div className="bg-amber-900/30 border border-amber-600/30 text-amber-300 px-4 py-2.5 rounded-lg mb-6 text-sm">
-              Showing sample data — Snowflake is not connected. Data will update automatically once Snowflake is available.
-            </div>
-          )}
           {summary && summary.data_source === "cached" && (
             <div className="text-slate-500 text-xs mb-4">
               Showing last cached data
