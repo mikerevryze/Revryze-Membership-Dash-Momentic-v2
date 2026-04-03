@@ -61,7 +61,7 @@ _cache = {}
 _CACHE_TIMEOUT = 600
 
 _sf_account = os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1")
-_sf_user = os.environ.get("SNOWFLAKE_USERNAME", "revryze_app")
+_sf_user = os.environ.get("SNOWFLAKE_USERNAME", "MIKEPRINCE")
 _sf_database = os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE")
 _sf_schema = os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS")
 _sf_warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE", "DASHBOARD_WH")
