@@ -7,6 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import snowflake.connector
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -58,25 +60,51 @@ def save_config(cfg):
 _cache = {}
 _CACHE_TIMEOUT = 600
 
-_sf_env = {
-    "account": os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1"),
-    "user": os.environ.get("SNOWFLAKE_USERNAME", "MIKEPRINCE"),
-    "password": os.environ.get("SNOWFLAKE_PASSWORD", "ChavezDog16!!!"),
-    "database": os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE"),
-    "schema": os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS"),
-    "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "DASHBOARD_WH"),
-}
+_sf_account = os.environ.get("SNOWFLAKE_ACCOUNT", "VSC78986.us-east-1")
+_sf_user = os.environ.get("SNOWFLAKE_USERNAME", "revryze_app")
+_sf_database = os.environ.get("SNOWFLAKE_DATABASE", "REVRYZE")
+_sf_schema = os.environ.get("SNOWFLAKE_SCHEMA", "ANALYTICS")
+_sf_warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE", "DASHBOARD_WH")
 
-print(f"[STARTUP] SNOWFLAKE_PASSWORD source: {'env var' if os.environ.get('SNOWFLAKE_PASSWORD') else 'fallback'}")
-print(f"[STARTUP] SNOWFLAKE_PASSWORD length: {len(_sf_env['password'])}")
-print(f"[STARTUP] Snowflake account: {_sf_env['account']}, user: {_sf_env['user']}")
+def _load_private_key():
+    pem_str = os.environ.get("SNOWFLAKE_PRIVATE_KEY", "")
+    if not pem_str:
+        raise RuntimeError("SNOWFLAKE_PRIVATE_KEY environment variable is not set")
+    private_key = serialization.load_pem_private_key(
+        pem_str.encode(),
+        password=None,
+        backend=default_backend(),
+    )
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+_private_key_bytes = None
+try:
+    _private_key_bytes = _load_private_key()
+    print("[STARTUP] Private key loaded successfully")
+except Exception as e:
+    print(f"[STARTUP] WARNING: Failed to load private key: {e}")
+
+print(f"[STARTUP] Snowflake account: {_sf_account}, user: {_sf_user}")
 
 
 def get_snowflake_conn():
+    if _private_key_bytes is None:
+        print("[CONN] Snowflake connection failed: private key not loaded")
+        return None
     try:
         conn = snowflake.connector.connect(
-            login_timeout=30, network_timeout=30,
-            **_sf_env,
+            account=_sf_account,
+            user=_sf_user,
+            private_key=_private_key_bytes,
+            database=_sf_database,
+            schema=_sf_schema,
+            warehouse=_sf_warehouse,
+            login_timeout=30,
+            network_timeout=30,
         )
         return conn
     except Exception as e:
@@ -112,7 +140,7 @@ def debug_snowflake():
     try:
         conn = get_snowflake_conn()
         if conn is None:
-            sf_result = "FAILED: connection error"
+            sf_result = "FAILED: private key not loaded or connection error"
         else:
             cur = conn.cursor()
             cur.execute("SELECT 1")
@@ -128,7 +156,7 @@ def debug_snowflake():
         "snowflake_account": os.environ.get("SNOWFLAKE_ACCOUNT", "NOT SET"),
         "snowflake_user": os.environ.get("SNOWFLAKE_USERNAME", "NOT SET"),
         "snowflake_warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "NOT SET"),
-        "snowflake_password_set": bool(os.environ.get("SNOWFLAKE_PASSWORD")),
+        "snowflake_private_key_set": bool(os.environ.get("SNOWFLAKE_PRIVATE_KEY")),
     }
 
 
