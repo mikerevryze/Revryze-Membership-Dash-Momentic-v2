@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
     "attrition": {"mode": "attrition_rate", "attrition_rate": 5.0, "avg_monthly_stay": 12},
 }
 
-FALLBACK_LOCATIONS = ["Highland Village", "Lakeview"]
+FALLBACK_LOCATIONS = ["Highland Village", "Lakeview", "West Lake", "Santa Monica"]
 
 
 def load_config():
@@ -217,19 +217,50 @@ def generate_fallback_daily(location, start_date_str=None, end_date_str=None):
     return rows
 
 
+def _auto_add_locations_to_config(location_names):
+    """Add newly discovered locations to config.json if they don't already have an entry."""
+    cfg = load_config()
+    changed = False
+    for name in location_names:
+        if name not in cfg.get("locations", {}):
+            cfg.setdefault("locations", {})[name] = {
+                "sales_start_date": None,
+                "opening_date": None,
+                "selected_campaigns": [],
+            }
+            changed = True
+    if changed:
+        save_config(cfg)
+
+
 @app.get("/api/locations")
 def get_locations():
+    location_map_locations = set()
+    dashboard_locations = set()
+
     conn = get_snowflake_conn()
     if conn:
         try:
             cur = conn.cursor()
-            cur.execute("SELECT LOCATION_NAME FROM REVRYZE.ANALYTICS.LOCATION_MAP ORDER BY LOCATION_NAME")
-            rows = cur.fetchall()
-            return [r[0] for r in rows]
+            try:
+                cur.execute("SELECT LOCATION_NAME FROM REVRYZE.ANALYTICS.LOCATION_MAP ORDER BY LOCATION_NAME")
+                location_map_locations = {r[0] for r in cur.fetchall()}
+            except Exception:
+                pass
+            try:
+                cur.execute("SELECT DISTINCT LOCATION_NAME FROM REVRYZE.ANALYTICS.DASHBOARD_DAILY")
+                dashboard_locations = {r[0] for r in cur.fetchall()}
+            except Exception:
+                pass
         except Exception:
             pass
         finally:
             conn.close()
+
+    all_locations = location_map_locations | dashboard_locations
+    if all_locations:
+        _auto_add_locations_to_config(all_locations)
+        return sorted(all_locations)
     return FALLBACK_LOCATIONS
 
 
