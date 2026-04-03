@@ -70,6 +70,10 @@ def _load_private_key():
     pem_str = os.environ.get("SNOWFLAKE_PRIVATE_KEY", "")
     if not pem_str:
         raise RuntimeError("SNOWFLAKE_PRIVATE_KEY environment variable is not set")
+    pem_str = pem_str.replace("\\n", "\n").strip()
+    if not pem_str.startswith("-----"):
+        pem_str = pem_str.replace(" ", "\n")
+        pem_str = f"-----BEGIN PRIVATE KEY-----\n{pem_str}\n-----END PRIVATE KEY-----"
     private_key = serialization.load_pem_private_key(
         pem_str.encode(),
         password=None,
