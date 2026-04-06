@@ -161,7 +161,15 @@
       const [settingsOpen, setSettingsOpen] = useState(false);
       const [availableCampaigns, setAvailableCampaigns] = useState([]);
       const [cdlCount, setCdlCount] = useState(0);
-      const [projectedAdditionalCDLs, setProjectedAdditionalCDLs] = useState(0);
+      const [projectedCDLsByLocation, setProjectedCDLsByLocation] = useState({});
+      const projectedAdditionalCDLs = projectedCDLsByLocation[activeLocation] || 0;
+      const setProjectedAdditionalCDLs = function(val) {
+        setProjectedCDLsByLocation(function(prev) {
+          var next = Object.assign({}, prev);
+          next[activeLocation] = val;
+          return next;
+        });
+      };
 
       const getDateParams = useCallback(() => {
         const today = new Date();

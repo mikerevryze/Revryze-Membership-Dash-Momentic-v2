@@ -24,8 +24,8 @@
       "cdl_sheet_gid": "1992602451"
     },
     "Santa Monica": {
-      "sales_start_date": null,
-      "opening_date": null,
+      "sales_start_date": "2026-03-25",
+      "opening_date": "2026-05-06",
       "selected_campaigns": [],
       "cdl_sheet_id": "1T1ZDBzu3I9ARFcQ2ic2S2JCoNVEXLxOuDbuFqL7Od14",
       "cdl_sheet_gid": "1661266551"
