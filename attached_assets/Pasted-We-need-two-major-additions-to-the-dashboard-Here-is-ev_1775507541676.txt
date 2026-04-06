@@ -1,0 +1,37 @@
+We need two major additions to the dashboard. Here is everything you need to know:
+
+PART 1 — Google Sheets CDL Integration
+
+Each location has a Google Form response sheet. Row 1 is a header, every non-empty row after that is a Community Driven Lead (CDL). We need to fetch the CDL count from each sheet using the Google Sheets API via a service account. The service account JSON credentials will be stored in a Replit secret called GOOGLE_SERVICE_ACCOUNT_JSON.
+
+Add the following sheet IDs to config.json under each location:
+
+Highland Village: 1gjMjw6Vre5SKKThQm04lYbfeP3hASAv-4a8P7oIu4fc (gid: 2140979712)
+Lakeview: 1GQI62TCY8ZFb8Uh-fJTcOkpMGb2WV5oehAsS5cUfT3U (gid: 2049338531)
+Santa Monica: 1T1ZDBzu3I9ARFcQ2ic2S2JCoNVEXLxOuDbuFqL7Od14 (gid: 1661266551)
+West Lake: 17PPhkPaf7HkRWG_HpZpkqqXWgtatov_c1yiHh4_9-i8 (gid: 1992602451)
+
+Add a new backend endpoint /api/cdls?location=X that authenticates with the service account, fetches the sheet for that location, and returns the count of non-empty rows excluding the header row. Add google-auth and gspread to requirements.txt.
+
+Display a new CDL KPI card on the dashboard next to the Meta Leads card showing the current CDL count for the active location.
+
+PART 2 — Goal Planner Section
+
+Add a new section below the Sales Velocity section called Goal Planner. The logic is as follows:
+
+- Member goal is fixed at 250
+- CDL goal is fixed at 500
+- Blended close rate = total memberships sold / (total Meta leads + current CDLs)
+- Total leads still needed to hit 250 members = (250 - current members sold) / blended close rate
+- User inputs projected additional CDLs via a slider or number input
+- Remaining paid leads needed = total leads still needed - projected additional CDLs
+- Additional ad spend needed = remaining paid leads needed x current CPL
+- As the user moves the CDL projection up, the required ad spend goes down in real time. As they move it down, ad spend goes up.
+
+Display the following in the Goal Planner section:
+- A progress bar showing current CDLs vs the 500 CDL goal
+- A progress bar showing current members sold vs the 250 member goal
+- A slider for projected additional CDLs with the resulting required ad spend updating live
+- A dynamic callout: "If you drive X more CDLs, you need $Y more in ad spend to hit 250 members"
+
+Everything is per location, same as the rest of the dashboard.

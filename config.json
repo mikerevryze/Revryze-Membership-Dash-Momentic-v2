@@ -5,19 +5,32 @@
       "opening_date": "2026-06-15",
       "selected_campaigns": [
         "RR - Prospecting"
-      ]
+      ],
+      "cdl_sheet_id": "1gjMjw6Vre5SKKThQm04lYbfeP3hASAv-4a8P7oIu4fc",
+      "cdl_sheet_gid": "2140979712"
     },
     "Lakeview": {
       "sales_start_date": "2026-02-25",
       "opening_date": "2026-05-31",
-      "selected_campaigns": []
+      "selected_campaigns": [],
+      "cdl_sheet_id": "1GQI62TCY8ZFb8Uh-fJTcOkpMGb2WV5oehAsS5cUfT3U",
+      "cdl_sheet_gid": "2049338531"
     },
     "West Lake": {
       "sales_start_date": null,
       "opening_date": null,
-      "selected_campaigns": []
+      "selected_campaigns": [],
+      "cdl_sheet_id": "17PPhkPaf7HkRWG_HpZpkqqXWgtatov_c1yiHh4_9-i8",
+      "cdl_sheet_gid": "1992602451"
     },
     "Santa Monica": {
+      "sales_start_date": null,
+      "opening_date": null,
+      "selected_campaigns": [],
+      "cdl_sheet_id": "1T1ZDBzu3I9ARFcQ2ic2S2JCoNVEXLxOuDbuFqL7Od14",
+      "cdl_sheet_gid": "1661266551"
+    },
+    "Westlake": {
       "sales_start_date": null,
       "opening_date": null,
       "selected_campaigns": []

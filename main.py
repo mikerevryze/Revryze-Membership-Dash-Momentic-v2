@@ -7,6 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import snowflake.connector
+import gspread
+from google.oauth2.service_account import Credentials
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from fastapi import FastAPI, HTTPException, Request
@@ -34,6 +36,25 @@ DEFAULT_CONFIG = {
 }
 
 FALLBACK_LOCATIONS = ["Highland Village", "Lakeview", "West Lake", "Santa Monica"]
+
+_gs_client = None
+
+def _get_gspread_client():
+    global _gs_client
+    if _gs_client is not None:
+        return _gs_client
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if not sa_json:
+        return None
+    try:
+        sa_info = json.loads(sa_json)
+        scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+        _gs_client = gspread.authorize(creds)
+        return _gs_client
+    except Exception as e:
+        print(f"[CDL] Failed to initialize Google Sheets client: {e}")
+        return None
 
 
 def load_config():
@@ -303,6 +324,47 @@ def get_campaigns(location: str):
         raise HTTPException(status_code=500, detail=f"Snowflake query failed: {e}")
     finally:
         conn.close()
+
+
+@app.get("/api/cdls")
+def get_cdls(location: str):
+    cfg = load_config()
+    loc_cfg = cfg.get("locations", {}).get(location, {})
+    sheet_id = loc_cfg.get("cdl_sheet_id")
+    gid = loc_cfg.get("cdl_sheet_gid")
+    if not sheet_id:
+        return {"location": location, "cdl_count": 0, "error": "No sheet configured"}
+    client = _get_gspread_client()
+    if client is None:
+        raise HTTPException(status_code=500, detail="Google Sheets service account not configured")
+    cache_key = f"cdl:{location}"
+    if cache_key in _cache and (time.time() - _cache[cache_key]["ts"]) < _CACHE_TIMEOUT:
+        return _cache[cache_key]["data"]
+    try:
+        spreadsheet = client.open_by_key(sheet_id)
+        if gid:
+            worksheet = None
+            for ws in spreadsheet.worksheets():
+                if str(ws.id) == str(gid):
+                    worksheet = ws
+                    break
+            if worksheet is None:
+                worksheet = spreadsheet.sheet1
+        else:
+            worksheet = spreadsheet.sheet1
+        all_values = worksheet.get_all_values()
+        cdl_count = 0
+        for row in all_values[1:]:
+            if any(cell.strip() for cell in row):
+                cdl_count += 1
+        result = {"location": location, "cdl_count": cdl_count}
+        _cache[cache_key] = {"data": result, "ts": time.time()}
+        return result
+    except Exception as e:
+        print(f"[CDL] Error fetching sheet for {location}: {e}")
+        if cache_key in _cache:
+            return _cache[cache_key]["data"]
+        raise HTTPException(status_code=500, detail=f"Failed to fetch CDL data: {e}")
 
 
 def _parse_campaigns(campaigns_str):

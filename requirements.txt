@@ -3,3 +3,5 @@ uvicorn
 gunicorn
 snowflake-connector-python
 cryptography
+google-auth
+gspread

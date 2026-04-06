@@ -23,6 +23,18 @@
       padding: 6px 10px; border-radius: 6px; outline: none;
     }
     select:focus, input:focus { border-color: #00d68f; }
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 8px;
+      background: #334155; border-radius: 4px; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
+      background: #00d68f; border-radius: 50%; cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 20px; height: 20px; background: #00d68f; border-radius: 50%;
+      cursor: pointer; border: none;
+    }
   </style>
 </head>
 <body>
@@ -40,6 +52,88 @@
     function formatNumber(n) {
       if (n == null) return "0";
       return Number(n).toLocaleString("en-US");
+    }
+
+    function GoalPlanner({ summary, cdlCount, projectedAdditionalCDLs, setProjectedAdditionalCDLs }) {
+      const MEMBER_GOAL = 250;
+      const CDL_GOAL = 500;
+      const totalMetaLeads = summary.total_meta_leads || 0;
+      const currentMembers = summary.memberships_sold || 0;
+      const currentCPL = summary.cpl || 0;
+      const totalLeadPool = totalMetaLeads + cdlCount;
+      const blendedCloseRate = totalLeadPool > 0 ? currentMembers / totalLeadPool : 0;
+      const membersStillNeeded = Math.max(0, MEMBER_GOAL - currentMembers);
+      const totalLeadsNeeded = blendedCloseRate > 0 ? Math.ceil(membersStillNeeded / blendedCloseRate) : 0;
+      const remainingPaidLeads = Math.max(0, totalLeadsNeeded - projectedAdditionalCDLs);
+      const additionalAdSpend = remainingPaidLeads * currentCPL;
+      const cdlProgress = Math.min(100, (cdlCount / CDL_GOAL) * 100);
+      const memberProgress = Math.min(100, (currentMembers / MEMBER_GOAL) * 100);
+      const sliderMax = Math.max(500, CDL_GOAL - cdlCount);
+
+      return (
+        <div className="chart-container rounded-xl p-6 mb-8">
+          <h3 className="text-lg font-semibold text-white mb-5">Goal Planner</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-slate-400">CDLs: {formatNumber(cdlCount)} / {formatNumber(CDL_GOAL)}</span>
+                <span className="text-slate-400">{cdlProgress.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-4 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: cdlProgress + "%", background: "linear-gradient(90deg, #00d68f, #00b377)" }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-slate-400">Members Sold: {formatNumber(currentMembers)} / {formatNumber(MEMBER_GOAL)}</span>
+                <span className="text-slate-400">{memberProgress.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-4 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: memberProgress + "%", background: "linear-gradient(90deg, #3b82f6, #2563eb)" }} />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Blended Close Rate</div>
+              <div className="text-xl font-bold text-white">{(blendedCloseRate * 100).toFixed(2)}%</div>
+              <div className="text-xs text-slate-500">{formatNumber(currentMembers)} members / ({formatNumber(totalMetaLeads)} Meta + {formatNumber(cdlCount)} CDL)</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Total Leads Still Needed</div>
+              <div className="text-xl font-bold text-white">{blendedCloseRate > 0 ? formatNumber(totalLeadsNeeded) : "\u2014"}</div>
+              <div className="text-xs text-slate-500">{formatNumber(membersStillNeeded)} members needed / {(blendedCloseRate * 100).toFixed(2)}% close rate</div>
+            </div>
+          </div>
+          <div className="mb-6">
+            <label className="text-sm text-slate-400 block mb-2">
+              Projected Additional CDLs: <span className="text-white font-bold">{formatNumber(projectedAdditionalCDLs)}</span>
+            </label>
+            <input type="range" min="0" max={sliderMax} step="5" value={projectedAdditionalCDLs} onChange={function(e) { setProjectedAdditionalCDLs(parseInt(e.target.value)); }} className="w-full h-2 rounded-lg appearance-none cursor-pointer" style={{ accentColor: "#00d68f" }} />
+            <div className="flex justify-between text-xs text-slate-500 mt-1">
+              <span>0</span>
+              <span>{formatNumber(sliderMax)}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Remaining Paid Leads Needed</div>
+              <div className="text-xl font-bold text-white">{blendedCloseRate > 0 ? formatNumber(remainingPaidLeads) : "\u2014"}</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-400 mb-1">Additional Ad Spend Needed</div>
+              <div className="text-xl font-bold text-emerald-400">{blendedCloseRate > 0 ? formatCurrency(additionalAdSpend) : "\u2014"}</div>
+            </div>
+          </div>
+          {blendedCloseRate > 0 && (
+            <div className="bg-emerald-600/20 border border-emerald-500/30 rounded-lg px-5 py-3">
+              <span className="text-emerald-300 font-semibold">
+                If you drive {formatNumber(projectedAdditionalCDLs)} more CDLs, you need {formatCurrency(additionalAdSpend)} more in ad spend to hit {formatNumber(MEMBER_GOAL)} members.
+              </span>
+            </div>
+          )}
+        </div>
+      );
     }
 
     function KPICard({ label, value, prefix }) {
@@ -66,6 +160,8 @@
       const [error, setError] = useState(null);
       const [settingsOpen, setSettingsOpen] = useState(false);
       const [availableCampaigns, setAvailableCampaigns] = useState([]);
+      const [cdlCount, setCdlCount] = useState(0);
+      const [projectedAdditionalCDLs, setProjectedAdditionalCDLs] = useState(0);
 
       const getDateParams = useCallback(() => {
         const today = new Date();
@@ -107,13 +203,17 @@
 
           const [sRes, dRes, cRes] = await Promise.all([
             fetch(summaryUrl), fetch(dailyUrl),
-            fetch(`/api/campaigns?location=${encodeURIComponent(loc)}`)
+            fetch("/api/campaigns?location=" + encodeURIComponent(loc))
           ]);
           if (!sRes.ok) throw new Error("Failed to fetch summary");
           if (!dRes.ok) throw new Error("Failed to fetch daily data");
           setSummary(await sRes.json());
           setDaily(await dRes.json());
-          if (cRes.ok) { const camps = await cRes.json(); setAvailableCampaigns(camps); }
+          if (cRes.ok) { setAvailableCampaigns(await cRes.json()); }
+          try {
+            const cdlRes = await fetch("/api/cdls?location=" + encodeURIComponent(loc));
+            if (cdlRes.ok) { setCdlCount((await cdlRes.json()).cdl_count || 0); } else { setCdlCount(0); }
+          } catch (cdlErr) { setCdlCount(0); }
         } catch (e) {
           setError(e.message);
         } finally {
@@ -122,6 +222,7 @@
       }, [getDateParams]);
 
       const initialLoadDone = useRef(false);
+      const prevLocation = useRef("");
 
       const initApp = useCallback(async () => {
         try {
@@ -134,6 +235,7 @@
           setError(null);
           if (locs.length > 0) {
             const firstLoc = locs[0];
+            prevLocation.current = firstLoc;
             setActiveLocation(firstLoc);
             initialLoadDone.current = true;
             fetchData(firstLoc, cfg);
@@ -147,7 +249,8 @@
       useEffect(() => { initApp(); }, []);
 
       useEffect(() => {
-        if (activeLocation && initialLoadDone.current) {
+        if (activeLocation && initialLoadDone.current && activeLocation !== prevLocation.current) {
+          prevLocation.current = activeLocation;
           fetchData(activeLocation, config);
         }
       }, [activeLocation]);
@@ -368,6 +471,7 @@
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 <KPICard label="Total Ad Spend" value={formatCurrency(summary.total_ad_spend)} />
                 <KPICard label="Meta Leads" value={formatNumber(summary.total_meta_leads)} />
+                <KPICard label="Community Driven Leads" value={formatNumber(cdlCount)} />
                 <KPICard label="CPL" value={formatCurrency(summary.cpl)} />
                 <KPICard label="Memberships Sold" value={formatNumber(summary.memberships_sold)} />
                 <KPICard label="Total Revenue" value={formatCurrency(summary.total_membership_revenue)} />
@@ -512,6 +616,14 @@
                   </div>
                 )}
               </div>
+
+              {/* Goal Planner */}
+              <GoalPlanner
+                summary={summary}
+                cdlCount={cdlCount}
+                projectedAdditionalCDLs={projectedAdditionalCDLs}
+                setProjectedAdditionalCDLs={setProjectedAdditionalCDLs}
+              />
 
               {/* Settings */}
               <div className="chart-container rounded-xl mb-8">
