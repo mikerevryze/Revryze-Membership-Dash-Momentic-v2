@@ -35,7 +35,7 @@ DEFAULT_CONFIG = {
     "attrition": {"mode": "attrition_rate", "attrition_rate": 5.0, "avg_monthly_stay": 12},
 }
 
-FALLBACK_LOCATIONS = ["Highland Village", "Lakeview", "West Lake", "Santa Monica"]
+FALLBACK_LOCATIONS = ["Highland Village", "Lakeview", "West Lake", "Santa Monica", "Back Bay", "Tribeca"]
 
 _gs_client = None
 
@@ -277,7 +277,7 @@ def _auto_add_locations_to_config(location_names):
 
 @app.get("/api/locations")
 def get_locations():
-    return ["Highland Village", "Lakeview", "Santa Monica", "West Lake"]
+    return ["Highland Village", "Lakeview", "Santa Monica", "West Lake", "Back Bay", "Tribeca"]
 
 
 @app.get("/api/campaigns")
