@@ -277,7 +277,7 @@ def _auto_add_locations_to_config(location_names):
 
 @app.get("/api/locations")
 def get_locations():
-    return ["Highland Village", "Lakeview", "Santa Monica", "West Lake", "Back Bay", "Tribeca"]
+    return ["Highland Village", "Lakeview", "Santa Monica", "West Lake", "Back Bay", "Tribeca", "Fenway"]
 
 
 @app.get("/api/campaigns")

@@ -43,6 +43,13 @@
       "selected_campaigns": [],
       "cdl_sheet_id": null,
       "cdl_sheet_gid": null
+    },
+    "Fenway": {
+      "sales_start_date": null,
+      "opening_date": null,
+      "selected_campaigns": [],
+      "cdl_sheet_id": null,
+      "cdl_sheet_gid": null
     }
   },
   "attrition": {
